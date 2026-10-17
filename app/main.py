@@ -2,7 +2,7 @@ import threading, copy
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.errors import err
-from app import store, scoring, standings, rbac
+from app import store, scoring, standings, rbac, fixtures
 
 app = FastAPI()
 LOCK = threading.Lock()
@@ -189,3 +189,9 @@ async def login(request: Request):
     if not u or b.get("password") != rbac.PASSWORD:
         return err(401, "UNAUTHENTICATED", "Wrong email or password")
     return {"token": rbac.make_jwt(u), "role": u["role"], "user": u}
+
+@app.post("/audit/v1/fixtures")
+async def fixtures_view(request: Request):
+    b = await read_json(request)
+    if b is None: return bad_json()
+    return out(fixtures.generate(b))
