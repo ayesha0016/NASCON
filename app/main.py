@@ -2,7 +2,7 @@ import threading, copy
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.errors import err
-from app import store, scoring, standings, rbac, fixtures, roster, sync
+from app import store, scoring, standings, rbac, fixtures, roster, sync, app_api
 
 app = FastAPI()
 LOCK = threading.Lock()
@@ -217,3 +217,9 @@ async def offline_sync(request: Request):
     b = await read_json(request)
     if b is None: return bad_json()
     return out(sync.sync(STATE, LOCK, b))
+
+@app.get("/api/v1/app/bootstrap")
+def app_bootstrap(request: Request):
+    c = _claims(request)
+    if c is None: return err(401, "UNAUTHENTICATED", "Please log in again")
+    return out(app_api.bootstrap(STATE, LOCK, c))

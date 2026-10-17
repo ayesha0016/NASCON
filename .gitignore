@@ -1,2 +1,4 @@
 .env
 __pycache__/
+mobile/app/build/
+mobile/app/.dart_tool/
