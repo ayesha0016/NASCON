@@ -2,7 +2,7 @@ import threading, copy
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.errors import err
-from app import store, scoring
+from app import store, scoring, standings, rbac
 
 app = FastAPI()
 LOCK = threading.Lock()
@@ -127,3 +127,65 @@ async def leagues(request: Request):
     b = await read_json(request)
     if b is None: return bad_json()
     return out(scoring.create_league(STATE, LOCK, b))
+
+@app.get("/audit/v1/standings/{league_id}")
+def standings_view(league_id: str):
+    return out(standings.compute(STATE, LOCK, league_id))
+
+# ---------------- RBAC ----------------
+@app.post("/audit/v1/rbac-matrix")
+def rbac_matrix():
+    return rbac.matrix()
+
+def _claims(request):
+    h = request.headers.get("authorization", "")
+    if not h.lower().startswith("bearer "): return None
+    return rbac.verify_jwt(h[7:].strip())
+
+def _probe(request, probe, target=None):
+    c = _claims(request)
+    if c is None: return err(401, "UNAUTHENTICATED", "Missing or invalid token")
+    if not rbac.allowed(c, probe, target): return err(403, "FORBIDDEN", "Not allowed", {"probe": probe})
+    return {"authorized": True}
+
+@app.post("/audit/v1/rbac/tenants")
+def p1(request: Request): return _probe(request, "tenants")
+
+@app.post("/audit/v1/rbac/leagues/{league_id}/fixtures")
+def p2(league_id: str, request: Request): return _probe(request, "league_fixtures", league_id)
+
+@app.post("/audit/v1/rbac/clubs/{club_id}/roster")
+def p3(club_id: str, request: Request): return _probe(request, "club_roster", club_id)
+
+@app.post("/audit/v1/rbac/clubs/{club_id}/products")
+def p4(club_id: str, request: Request): return _probe(request, "club_products", club_id)
+
+@app.patch("/audit/v1/rbac/players/{player_id}")
+def p5(player_id: str, request: Request): return _probe(request, "player", player_id)
+
+@app.get("/audit/v1/rbac/clubs/{club_id}")
+def p6(club_id: str, request: Request): return _probe(request, "club_read", club_id)
+
+@app.get("/audit/v1/rbac/platform/config")
+def p7(request: Request): return _probe(request, "platform")
+
+LIMITER = rbac.RateLimiter(100, 10.0)
+
+@app.get("/api/v1/ping")
+def ping(request: Request):
+    ip = request.client.host if request.client else "unknown"
+    wait = LIMITER.check(ip)
+    if wait:
+        r = err(429, "RATE_LIMITED", "Too many requests", {"retry_after": wait})
+        r.headers["Retry-After"] = str(wait)
+        return r
+    return {"pong": True}
+
+@app.post("/api/v1/auth/login")
+async def login(request: Request):
+    b = await read_json(request)
+    if not isinstance(b, dict): return bad_json()
+    u = rbac.USERS.get(b.get("email"))
+    if not u or b.get("password") != rbac.PASSWORD:
+        return err(401, "UNAUTHENTICATED", "Wrong email or password")
+    return {"token": rbac.make_jwt(u), "role": u["role"], "user": u}
