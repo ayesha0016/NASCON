@@ -2,7 +2,7 @@ import threading, copy
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.errors import err
-from app import store, scoring, standings, rbac, fixtures
+from app import store, scoring, standings, rbac, fixtures, roster, sync
 
 app = FastAPI()
 LOCK = threading.Lock()
@@ -47,7 +47,7 @@ def do_reset(seed=42, stock=None):
         "seed": seed,
         "sports": copy.deepcopy(SPORTS_SEED),
         "matches": {}, "events": {}, "leagues": {},
-        "rosters": {}, "orders": {}, "sync": {}, "queue": [], "counter": 0,
+        "rosters": {}, "orders": {}, "sync": {}, "queue": [], "counter": 0, "player_league": {}, "audit_seq": 0,
         "stock": dict(stock),
         "reserved": {k: 0 for k in stock},
     })
@@ -195,3 +195,25 @@ async def fixtures_view(request: Request):
     b = await read_json(request)
     if b is None: return bad_json()
     return out(fixtures.generate(b))
+
+@app.post("/audit/v1/roster/setup")
+async def roster_setup(request: Request):
+    b = await read_json(request)
+    if b is None: return bad_json()
+    return out(roster.setup(STATE, LOCK, b))
+
+@app.post("/audit/v1/roster/transfer")
+async def roster_transfer(request: Request):
+    b = await read_json(request)
+    if b is None: return bad_json()
+    return out(roster.transfer(STATE, LOCK, b))
+
+@app.get("/audit/v1/roster/history/{player_id}")
+def roster_history(player_id: str, as_of: str = None):
+    return out(roster.history(STATE, LOCK, player_id, as_of))
+
+@app.post("/audit/v1/offline-sync")
+async def offline_sync(request: Request):
+    b = await read_json(request)
+    if b is None: return bad_json()
+    return out(sync.sync(STATE, LOCK, b))

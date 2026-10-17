@@ -5,7 +5,7 @@ from app.main import SPORTS_SEED
 def fresh(stock=None):
     stock = stock or {"var-jersey-001-M": 1, "var-jersey-001-L": 5}
     return {"seed": 42, "sports": copy.deepcopy(SPORTS_SEED), "matches": {}, "events": {}, "leagues": {},
-            "orders": {}, "queue": [], "counter": 0, "stock": dict(stock), "reserved": {k: 0 for k in stock}}
+            "orders": {}, "queue": [], "counter": 0, "rosters": {}, "player_league": {}, "audit_seq": 0, "sync": {}, "stock": dict(stock), "reserved": {k: 0 for k in stock}}
 
 def order(i, tok="tok_success", dc=None, var="var-jersey-001-M"):
     return {"order_id": f"ord-{i}", "customer_id": "c1", "items": [{"variant_id": var, "quantity": 1}],
