@@ -1,6 +1,8 @@
 import threading, copy
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from app.errors import err
+from app import store, scoring
 
 app = FastAPI()
 LOCK = threading.Lock()
@@ -45,7 +47,7 @@ def do_reset(seed=42, stock=None):
         "seed": seed,
         "sports": copy.deepcopy(SPORTS_SEED),
         "matches": {}, "events": {}, "leagues": {},
-        "rosters": {}, "orders": {}, "sync": {},
+        "rosters": {}, "orders": {}, "sync": {}, "queue": [], "counter": 0,
         "stock": dict(stock),
         "reserved": {k: 0 for k in stock},
     })
@@ -79,3 +81,49 @@ async def reset(request: Request):
             "sports": ["football","basketball","cricket","esports"],
             "tenants": ["tenant-alpha","tenant-beta"],
             "stock": STATE["stock"]}
+
+
+def out(res):
+    status, body = res
+    return JSONResponse(status_code=status, content=body)
+
+async def read_json(request):
+    try:
+        return await request.json()
+    except Exception:
+        return None
+
+def bad_json():
+    return err(400, "VALIDATION_ERROR", "Malformed JSON", {"fields": ["body"]})
+
+@app.post("/audit/v1/checkout")
+async def checkout(request: Request):
+    b = await read_json(request)
+    if b is None: return bad_json()
+    return out(store.checkout(STATE, LOCK, b))
+
+@app.get("/audit/v1/inventory/{variant_id}")
+def inventory(variant_id: str):
+    return out(store.inventory(STATE, LOCK, variant_id))
+
+@app.post("/audit/v1/sports")
+async def sports(request: Request):
+    b = await read_json(request)
+    if b is None: return bad_json()
+    return out(scoring.create_sport(STATE, LOCK, b))
+
+@app.post("/audit/v1/events")
+async def events(request: Request):
+    b = await read_json(request)
+    if b is None: return bad_json()
+    return out(scoring.post_event(STATE, LOCK, b))
+
+@app.get("/audit/v1/score/{match_id}")
+def score(match_id: str):
+    return out(scoring.score_view(STATE, LOCK, match_id))
+
+@app.post("/audit/v1/leagues")
+async def leagues(request: Request):
+    b = await read_json(request)
+    if b is None: return bad_json()
+    return out(scoring.create_league(STATE, LOCK, b))
